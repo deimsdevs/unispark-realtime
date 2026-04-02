@@ -1,9 +1,9 @@
 require('dotenv').config();
 const WebSocket = require('ws');
 const mysql = require('mysql2/promise');
+const http = require('http');
 
 const PORT = process.env.PORT || 8080;
-const wss = new WebSocket.Server({ port: PORT });
 
 const db = mysql.createPool({
   host: process.env.DB_HOST,
@@ -16,6 +16,13 @@ const db = mysql.createPool({
 });
 
 const connectedUsers = {};
+
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Unispark realtime server alive 🟢');
+});
+
+const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   let currentUserId = null;
@@ -75,11 +82,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Keep-alive endpoint for UptimeRobot
-const http = require('http');
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end('Unispark realtime server alive 🟢');
-}).listen(process.env.HEALTH_PORT || 3000);
-
-console.log(`🚀 Unispark realtime server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`🚀 Unispark realtime server running on port ${PORT}`);
+});
