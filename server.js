@@ -5,20 +5,16 @@ const https = require('https');
 
 const PORT = process.env.PORT || 8080;
 const SITE_URL = 'https://unispark.rf.gd/dashboard/chat/update_status.php';
-
 const connectedUsers = {};
 
 function updateUserStatus(userId, isOnline) {
     const url = `${SITE_URL}?user_id=${userId}&is_online=${isOnline ? 1 : 0}`;
-    
     https.get(url, (res) => {
         console.log(`Status update for user ${userId}: ${isOnline ? 'online' : 'offline'} → HTTP ${res.statusCode}`);
     }).on('error', (err) => {
         console.error(`Status update failed for user ${userId}:`, err.message);
     });
 }
-
-
 
 const server = http.createServer((req, res) => {
     res.writeHead(200);
@@ -57,7 +53,6 @@ wss.on('connection', (ws) => {
                     }));
                 }
             }
-
         } catch (err) {
             console.error('Error:', err);
         }
