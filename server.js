@@ -69,8 +69,8 @@ if (data.type === 'offline') {
     ws.send(JSON.stringify({ type: 'heartbeat_ack' }));
 }
 
-            if (['call_offer','call_answer','ice_candidate',
-                 'call_rejected','call_ended'].includes(data.type)) {
+           if (['call_offer','call_answer','ice_candidate',
+     'call_rejected','call_ended','call_ready'].includes(data.type)) {
                 const targetWs = connectedUsers[data.targetUserId];
                 if (targetWs && targetWs.readyState === WebSocket.OPEN) {
                     targetWs.send(JSON.stringify({
