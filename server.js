@@ -7,6 +7,21 @@ const PORT = process.env.PORT || 8080;
 const SITE_URL = 'https://unispark.rf.gd/dashboard/chat/update_status.php';
 const connectedUsers = {};
 
+const lastHeartbeat = {};
+
+// Check for dead connections every 20 seconds
+setInterval(() => {
+    const now = Date.now();
+    Object.keys(lastHeartbeat).forEach(userId => {
+        if (now - lastHeartbeat[userId] > 40000) {
+            console.log(`⏰ User ${userId} timed out`);
+            delete connectedUsers[userId];
+            delete lastHeartbeat[userId];
+            updateUserStatus(userId, false);
+        }
+    });
+}, 20000);
+
 function updateUserStatus(userId, isOnline) {
     const url = `${SITE_URL}?user_id=${userId}&is_online=${isOnline ? 1 : 0}`;
     https.get(url, (res) => {
@@ -31,12 +46,14 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
 
             if (data.type === 'auth') {
-                currentUserId = data.userId;
-                connectedUsers[currentUserId] = ws;
-                updateUserStatus(currentUserId, true);
-                ws.send(JSON.stringify({ type: 'auth_success' }));
-                console.log(`✅ User ${currentUserId} online`);
-            }
+    currentUserId = data.userId;
+    connectedUsers[currentUserId] = ws;
+    lastHeartbeat[currentUserId] = Date.now();
+    updateUserStatus(currentUserId, true);
+    ws.send(JSON.stringify({ type: 'auth_success' }));
+    console.log(`✅ User ${currentUserId} online`);
+}
+
 
 if (data.type === 'offline') {
     if (currentUserId) {
@@ -47,9 +64,10 @@ if (data.type === 'offline') {
 }
 
             if (data.type === 'heartbeat') {
-                updateUserStatus(currentUserId, true);
-                ws.send(JSON.stringify({ type: 'heartbeat_ack' }));
-            }
+    lastHeartbeat[currentUserId] = Date.now();
+    updateUserStatus(currentUserId, true);
+    ws.send(JSON.stringify({ type: 'heartbeat_ack' }));
+}
 
             if (['call_offer','call_answer','ice_candidate',
                  'call_rejected','call_ended'].includes(data.type)) {
