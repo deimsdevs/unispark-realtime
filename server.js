@@ -38,6 +38,14 @@ wss.on('connection', (ws) => {
                 console.log(`✅ User ${currentUserId} online`);
             }
 
+if (data.type === 'offline') {
+    if (currentUserId) {
+        delete connectedUsers[currentUserId];
+        updateUserStatus(currentUserId, false);
+        console.log(`❌ User ${currentUserId} manually offline`);
+    }
+}
+
             if (data.type === 'heartbeat') {
                 updateUserStatus(currentUserId, true);
                 ws.send(JSON.stringify({ type: 'heartbeat_ack' }));
