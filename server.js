@@ -9,15 +9,14 @@ const SITE_URL = 'https://unispark.rf.gd/dashboard/chat/update_status.php';
 const connectedUsers = {};
 
 function updateUserStatus(userId, isOnline) {
-    const postData = `user_id=${userId}&is_online=${isOnline ? 1 : 0}`;
+    const url = `${SITE_URL}?user_id=${userId}&is_online=${isOnline ? 1 : 0}`;
     
-    const options = {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Content-Length': Buffer.byteLength(postData)
-        }
-    };
+    https.get(url, (res) => {
+        console.log(`Status update for user ${userId}: ${isOnline ? 'online' : 'offline'} → HTTP ${res.statusCode}`);
+    }).on('error', (err) => {
+        console.error(`Status update failed for user ${userId}:`, err.message);
+    });
+}
 
     const req = https.request(SITE_URL, options, (res) => {
         console.log(`Status update for user ${userId}: ${isOnline ? 'online' : 'offline'} → HTTP ${res.statusCode}`);
