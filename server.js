@@ -18,17 +18,7 @@ function updateUserStatus(userId, isOnline) {
     });
 }
 
-    const req = https.request(SITE_URL, options, (res) => {
-        console.log(`Status update for user ${userId}: ${isOnline ? 'online' : 'offline'} → HTTP ${res.statusCode}`);
-    });
 
-    req.on('error', (err) => {
-        console.error(`Status update failed for user ${userId}:`, err.message);
-    });
-
-    req.write(postData);
-    req.end();
-}
 
 const server = http.createServer((req, res) => {
     res.writeHead(200);
