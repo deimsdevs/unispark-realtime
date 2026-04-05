@@ -32,8 +32,38 @@ function updateUserStatus(userId, isOnline) {
 }
 
 const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Unispark realtime server alive 🟢');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.url === '/turn-credentials') {
+        const auth = Buffer.from('Dammy:7d84be6e-2fae-11f1-aff3-0242ac130003').toString('base64');
+        const body = JSON.stringify({ format: 'urls' });
+        const options = {
+            hostname: 'global.xirsys.net',
+            path: '/_turn/unispark-realtime',
+            method: 'PUT',
+            headers: {
+                'Authorization': 'Basic ' + auth,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+        const request = https.request(options, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(data);
+            });
+        });
+        request.on('error', () => {
+            res.writeHead(500);
+            res.end('{}');
+        });
+        request.write(body);
+        request.end();
+    } else {
+        res.writeHead(200);
+        res.end('Unispark realtime server alive 🟢');
+    }
 });
 
 const wss = new WebSocket.Server({ server });
