@@ -102,50 +102,6 @@ function isOnline(uid) {
     return !!(set && set.size > 0);
 }
 
-// ---------------------------------------------------------------------------
-// Chat: presence watchers and active 1:1 calls
-// ---------------------------------------------------------------------------
-const watchers = new Map();           // uid -> Set<ws> watching that user's presence
-const activeCalls = new Map();        // uid -> partner uid, while a 1:1 call is connected
-
-function announcePresence(uid, online) {
-    const set = watchers.get(uid);
-    if (!set) return;
-    const payload = JSON.stringify({ type: 'chat_presence', userId: uid, online: online });
-    set.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(payload); });
-}
-
-function unwatch(ws) {
-    if (!ws.watching) return;
-    const set = watchers.get(ws.watching);
-    if (set) {
-        set.delete(ws);
-        if (set.size === 0) watchers.delete(ws.watching);
-    }
-    ws.watching = null;
-}
-
-function chatWatch(ws, data) {
-    const target = String(data.targetUserId || '');
-    unwatch(ws);
-    if (!/^\d+$/.test(target)) return;
-    ws.watching = target;
-    if (!watchers.has(target)) watchers.set(target, new Set());
-    watchers.get(target).add(ws);
-    sendTo(ws, { type: 'chat_presence', userId: target, online: isOnline(target) });
-}
-
-function inCall(uid) {
-    return activeCalls.has(uid);
-}
-
-function clearCall(uid) {
-    const partner = activeCalls.get(uid);
-    activeCalls.delete(uid);
-    if (partner && activeCalls.get(partner) === uid) activeCalls.delete(partner);
-    return partner;
-}
-
 function pushStatusToSite(uid, online) {
     const params = new URLSearchParams({ user_id: uid, is_online: online ? '1' : '0' });
     if (STATUS_KEY) params.set('key', STATUS_KEY);
@@ -157,10 +113,9 @@ function pushStatusToSite(uid, online) {
 function markOnline(uid) {
     const timer = offlineTimers.get(uid);
     if (timer) { clearTimeout(timer); offlineTimers.delete(uid); }
-        if (!reportedOnline.has(uid)) {
+    if (!reportedOnline.has(uid)) {
         reportedOnline.add(uid);
         pushStatusToSite(uid, true);
-        announcePresence(uid, true);
         console.log(`User ${uid} online`);
     }
 }
@@ -170,9 +125,8 @@ function scheduleOffline(uid) {
     const timer = setTimeout(() => {
         offlineTimers.delete(uid);
         if (isOnline(uid)) return;
-                reportedOnline.delete(uid);
+        reportedOnline.delete(uid);
         pushStatusToSite(uid, false);
-        announcePresence(uid, false);
         console.log(`User ${uid} offline`);
     }, OFFLINE_GRACE_MS);
     offlineTimers.set(uid, timer);
@@ -440,18 +394,6 @@ const server = http.createServer((req, res) => {
 // WebSocket
 // ---------------------------------------------------------------------------
 const CALL_TYPES = ['call_offer', 'call_answer', 'ice_candidate', 'call_rejected', 'call_ended', 'call_ready'];
-const CHAT_TYPES = ['chat_new', 'chat_typing', 'chat_read', 'chat_delivered'];
-
-// Chat events carry no message content. The sender id is set here, so it cannot be faked.
-function handleChatSignal(ws, data) {
-    const target = String(data.targetUserId || '');
-    if (!/^\d+$/.test(target) || target === ws.user.uid) return;
-    if (ws.user.blocked.includes(target)) return;
-
-    const out = { type: data.type, fromUserId: ws.user.uid };
-    if (data.type === 'chat_typing') out.typing = !!data.typing;
-    sendToUser(target, out);
-}
 
 const wss = new WebSocket.Server({
     server,
@@ -490,29 +432,21 @@ function handleAuth(ws, data) {
 function handleCallSignal(ws, data) {
     const target = String(data.targetUserId || '');
     if (!target || target === ws.user.uid) return;
-    const me = ws.user.uid;
 
     if (data.type === 'call_offer') {
-        if (inFacetime(me)) return;
-        if (inCall(me)) clearCall(me);          // treat as stale and let the new call through
+        if (inFacetime(ws.user.uid)) return;
         if (!isOnline(target)) {
             sendTo(ws, { type: 'call_rejected', fromUserId: target, unavailable: true });
             return;
         }
-        if (inFacetime(target) || inCall(target)) {
+        if (inFacetime(target)) {
             sendTo(ws, { type: 'call_rejected', fromUserId: target, busy: true });
             return;
         }
         data.callerName = ws.user.name;
         data.callerPhoto = safePhoto(data.callerPhoto);
-    } else if (data.type === 'call_answer') {
-        activeCalls.set(me, target);
-        activeCalls.set(target, me);
-    } else if (data.type === 'call_ended' || data.type === 'call_rejected') {
-        clearCall(me);
     }
-
-    sendToUser(target, Object.assign({}, data, { fromUserId: me }));
+    sendToUser(target, Object.assign({}, data, { fromUserId: ws.user.uid }));
 }
 
 wss.on('connection', ws => {
@@ -547,10 +481,6 @@ wss.on('connection', ws => {
                 ftSignal(ws, data);
             } else if (data.type === 'ft_block') {
                 ftBlock(ws);
-            } else if (CHAT_TYPES.includes(data.type)) {
-                handleChatSignal(ws, data);
-            } else if (data.type === 'chat_watch') {
-                chatWatch(ws, data);
             }
             // The old 'offline' message is ignored on purpose: the close event plus the grace period handles it.
         } catch (err) {
@@ -559,7 +489,6 @@ wss.on('connection', ws => {
     });
 
     ws.on('close', () => {
-        unwatch(ws);
         clearTimeout(ws.authTimer);
         removeFromQueue(ws);
         if (ws.user && ws.ft.state === 'matched') endSession(ws, { requeueSelf: false, reason: 'disconnected' });
@@ -567,11 +496,7 @@ wss.on('connection', ws => {
             const set = sockets.get(ws.user.uid);
             if (set) {
                 set.delete(ws);
-                                if (set.size === 0) {
-                    sockets.delete(ws.user.uid);
-                    const partner = clearCall(ws.user.uid);
-                    if (partner) sendToUser(partner, { type: 'call_ended', fromUserId: ws.user.uid });
-                }
+                if (set.size === 0) sockets.delete(ws.user.uid);
             }
             scheduleOffline(ws.user.uid);
         }
