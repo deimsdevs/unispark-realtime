@@ -335,12 +335,19 @@ function ftSignal(ws, data) {
     sendTo(ws.ft.partner, { type: 'ft_signal', sid: data.sid, kind: data.kind, payload: data.payload });
 }
 
-function ftBlock(ws) {
-    if (ws.ft.state !== 'matched') return;
-    const blocked = ws.ft.partner.user.uid;
+function ftBlock(ws, data) {
+    const wanted = String((data && data.targetUserId) || '');
+    const current = ws.ft.state === 'matched' ? ws.ft.partner.user.uid : null;
+    const target = /^\d+$/.test(wanted) ? wanted : current;
+    if (!target || target === ws.user.uid) return;
+
     if (!ftBlocks.has(ws.user.uid)) ftBlocks.set(ws.user.uid, new Set());
-    ftBlocks.get(ws.user.uid).add(blocked);
-    endSession(ws, { requeueSelf: true, reason: 'skipped' });   // the other person just sees a skip
+    ftBlocks.get(ws.user.uid).add(target);
+
+    // Only end the call if the blocked person is the one we are connected to right now
+    if (current && current === target) {
+        endSession(ws, { requeueSelf: true, reason: 'skipped' });   // the other person just sees a skip
+    }
 }
 
 setInterval(tryPair, 1000);
